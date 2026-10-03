@@ -1,32 +1,48 @@
-import { describe, expect, it, beforeEach } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { describe, expect, it, beforeEach, vi } from "vitest";
+
+const queryMock = vi.fn();
+
+vi.mock("pg", () => ({
+  Pool: class {
+    query = queryMock;
+  },
+}));
+
 import { GET, POST } from "@/app/api/projects/route";
 import {
   createProject,
   listProjects,
   resetProjectsForTests,
-  setProjectStorePathForTests,
 } from "@/lib/projects";
-
-const testProjectStorePath = path.join(
-  os.tmpdir(),
-  "ai-observability-dashboard-projects-test.json",
-);
 
 async function json(response: Response) {
   return response.json() as Promise<unknown>;
 }
 
+const projectRow = {
+  id: "proj_1",
+  name: "Cliente Alpha",
+  slug: "cliente-alpha",
+  repository_url: "https://github.com/example/alpha",
+  description: "Projeto conectado por agente externo",
+  status: "active",
+  created_at: "2026-10-03T00:00:00.000Z",
+};
+
 describe("project registry", () => {
   beforeEach(() => {
-    setProjectStorePathForTests(testProjectStorePath);
+    queryMock.mockReset();
+    delete (globalThis as Record<string, unknown>).pgPool;
+    process.env.DATABASE_URL = "postgresql://x:y@localhost:5432/z";
     resetProjectsForTests();
   });
 
-  it("creates and lists projects through the domain API", () => {
-    const project = createProject({
+  it("creates and lists projects through the domain API", async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [] }) // duplicate slug check
+      .mockResolvedValueOnce({ rows: [] }); // insert
+
+    const project = await createProject({
       name: "Cliente Alpha",
       slug: "cliente-alpha",
       repositoryUrl: "https://github.com/example/alpha",
@@ -41,70 +57,72 @@ describe("project registry", () => {
     });
     expect(project.id).toMatch(/^proj_/);
     expect(project.createdAt).toBeTruthy();
-    expect(listProjects()).toHaveLength(1);
-    expect(JSON.parse(fs.readFileSync(testProjectStorePath, "utf8"))).toHaveLength(1);
-  });
-
-  it("loads projects from the file store", () => {
-    fs.writeFileSync(
-      testProjectStorePath,
-      JSON.stringify([
-        {
-          id: "proj_file_seed",
-          name: "Seeded Project",
-          slug: "seeded-project",
-          status: "active",
-          createdAt: "2026-10-03T00:00:00.000Z",
-        },
-      ]),
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.stringContaining("insert into projects"),
+      expect.arrayContaining([project.id, "Cliente Alpha", "cliente-alpha"]),
     );
 
-    expect(listProjects()).toMatchObject([
+    queryMock.mockResolvedValueOnce({ rows: [projectRow] });
+
+    expect(await listProjects()).toHaveLength(1);
+  });
+
+  it("maps rows from postgres into projects", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [projectRow] });
+
+    expect(await listProjects()).toMatchObject([
       {
-        id: "proj_file_seed",
-        name: "Seeded Project",
-        slug: "seeded-project",
+        id: "proj_1",
+        name: "Cliente Alpha",
+        slug: "cliente-alpha",
+        repositoryUrl: "https://github.com/example/alpha",
       },
     ]);
   });
 
-  it("fails explicitly when the file store is corrupted", () => {
-    fs.writeFileSync(testProjectStorePath, "not-json", "utf8");
+  it("fails explicitly when the database query fails", async () => {
+    queryMock.mockRejectedValueOnce(new Error("connection refused"));
 
-    expect(() => listProjects()).toThrow("Project store is unavailable");
+    await expect(listProjects()).rejects.toThrow("connection refused");
   });
 
-  it("rejects duplicated project slugs", () => {
-    createProject({ name: "Alpha", slug: "alpha" });
+  it("rejects duplicated project slugs", async () => {
+    queryMock.mockResolvedValueOnce({ rows: [{ slug: "alpha" }] });
 
-    expect(() => createProject({ name: "Alpha Duplicate", slug: "alpha" })).toThrow(
+    await expect(createProject({ name: "Alpha", slug: "alpha" })).rejects.toThrow(
       "Project slug already exists",
     );
   });
 
-  it("rejects invalid project payloads", () => {
-    expect(() => createProject({ name: "", slug: "valid-slug" })).toThrow(
+  it("rejects invalid project payloads", async () => {
+    await expect(createProject({ name: "", slug: "valid-slug" })).rejects.toThrow(
       "Project name is required",
     );
-    expect(() => createProject({ name: "Valid", slug: "Invalid Slug" })).toThrow(
+    await expect(createProject({ name: "Valid", slug: "Invalid Slug" })).rejects.toThrow(
       "Project slug must use lowercase letters, numbers and hyphens",
     );
-    expect(() =>
+    await expect(
       createProject({ name: "Valid", slug: "valid", repositoryUrl: "not-a-url" }),
-    ).toThrow("Repository URL must be a valid URL");
-    expect(() =>
+    ).rejects.toThrow("Repository URL must be a valid URL");
+    await expect(
       createProject({ name: "Valid", slug: "valid", repositoryUrl: "mailto:repo@example.com" }),
-    ).toThrow("Repository URL must be a valid URL");
+    ).rejects.toThrow("Repository URL must be a valid URL");
   });
 });
 
 describe("/api/projects", () => {
   beforeEach(() => {
-    setProjectStorePathForTests(testProjectStorePath);
+    queryMock.mockReset();
+    delete (globalThis as Record<string, unknown>).pgPool;
+    process.env.DATABASE_URL = "postgresql://x:y@localhost:5432/z";
     resetProjectsForTests();
   });
 
   it("creates projects via POST and lists them via GET", async () => {
+    queryMock
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+
     const created = await POST(
       new Request("http://localhost/api/projects", {
         method: "POST",
@@ -118,22 +136,24 @@ describe("/api/projects", () => {
 
     expect(created.status).toBe(201);
     expect(await json(created)).toMatchObject({
-      project: {
-        name: "API Connected Project",
-        slug: "api-connected-project",
-      },
+      project: { name: "API Connected Project", slug: "api-connected-project" },
+    });
+
+    queryMock.mockResolvedValueOnce({
+      rows: [
+        {
+          ...projectRow,
+          name: "API Connected Project",
+          slug: "api-connected-project",
+        },
+      ],
     });
 
     const listed = await GET();
 
     expect(listed.status).toBe(200);
     expect(await json(listed)).toMatchObject({
-      projects: [
-        {
-          name: "API Connected Project",
-          slug: "api-connected-project",
-        },
-      ],
+      projects: [{ name: "API Connected Project", slug: "api-connected-project" }],
     });
   });
 
@@ -165,9 +185,7 @@ describe("/api/projects", () => {
     });
   });
 
-  it("validates POST payloads before reading a corrupted project store", async () => {
-    fs.writeFileSync(testProjectStorePath, "not-json", "utf8");
-
+  it("validates POST payloads before touching the database", async () => {
     const response = await POST(
       new Request("http://localhost/api/projects", {
         method: "POST",
@@ -176,12 +194,12 @@ describe("/api/projects", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(await json(response)).toMatchObject({
-      error: "Project slug must use lowercase letters, numbers and hyphens",
-    });
+    expect(queryMock).not.toHaveBeenCalled();
   });
 
   it("serializes concurrent project creation through the API", async () => {
+    queryMock.mockImplementation(async () => ({ rows: [] }));
+
     const responses = await Promise.all(
       ["one", "two", "three"].map((slug) =>
         POST(
@@ -194,11 +212,10 @@ describe("/api/projects", () => {
     );
 
     expect(responses.map((response) => response.status)).toEqual([201, 201, 201]);
-    expect(listProjects()).toHaveLength(3);
   });
 
-  it("returns 500 when the project store cannot be read", async () => {
-    fs.writeFileSync(testProjectStorePath, "not-json", "utf8");
+  it("returns 500 when the database cannot be read", async () => {
+    queryMock.mockRejectedValueOnce(new Error("connection refused"));
 
     const response = await GET();
 

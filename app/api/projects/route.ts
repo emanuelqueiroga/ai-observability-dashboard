@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   ProjectValidationError,
+  ProjectStorageError,
   createProjectQueued,
   listProjects,
   type CreateProjectInput,
@@ -27,7 +28,7 @@ function asCreateProjectInput(payload: unknown): CreateProjectInput {
 
 export async function GET() {
   try {
-    return NextResponse.json({ projects: listProjects() });
+    return NextResponse.json({ projects: await listProjects() });
   } catch {
     return NextResponse.json({ error: STORAGE_ERROR_MESSAGE }, { status: 500 });
   }

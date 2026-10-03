@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeDatabaseUrl } from "@/lib/migrate";
+import { normalizeDatabaseUrl } from "@/lib/migrate.mjs";
 
 describe("migrate helpers", () => {
   it("returns DATABASE_URL when present", () => {

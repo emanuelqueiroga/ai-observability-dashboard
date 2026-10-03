@@ -1,5 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
+import { query } from "@/lib/db";
 
 export type ProjectStatus = "active";
 
@@ -27,97 +26,32 @@ const PROJECT_REPOSITORY_URL_INVALID = "Repository URL must be a valid URL";
 const PROJECT_SLUG_DUPLICATED = "Project slug already exists";
 const PROJECT_STORE_UNAVAILABLE = "Project store is unavailable";
 
-let projectStorePath = path.join(process.cwd(), "data", "projects.json");
 let projectWriteQueue = Promise.resolve();
 
 export class ProjectValidationError extends Error {}
 
 export class ProjectStorageError extends Error {}
 
-function ensureProjectStore() {
-  fs.mkdirSync(/* turbopackIgnore: true */ path.dirname(projectStorePath), {
-    recursive: true,
-  });
+type ProjectRow = {
+  id: string;
+  name: string;
+  slug: string;
+  repository_url: string | null;
+  description: string | null;
+  status: ProjectStatus;
+  created_at: string;
+};
 
-  if (!fs.existsSync(/* turbopackIgnore: true */ projectStorePath)) {
-    writeProjects([]);
-  }
-}
-
-function asProject(value: unknown): Project | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const record = value as Record<string, unknown>;
-
-  if (
-    typeof record.id !== "string" ||
-    typeof record.name !== "string" ||
-    typeof record.slug !== "string" ||
-    record.status !== "active" ||
-    typeof record.createdAt !== "string"
-  ) {
-    return null;
-  }
-
+function rowToProject(row: ProjectRow): Project {
   return {
-    id: record.id,
-    name: record.name,
-    slug: record.slug,
-    repositoryUrl: typeof record.repositoryUrl === "string" ? record.repositoryUrl : undefined,
-    description: typeof record.description === "string" ? record.description : undefined,
-    status: record.status,
-    createdAt: record.createdAt,
+    id: row.id,
+    name: row.name,
+    slug: row.slug,
+    repositoryUrl: row.repository_url ?? undefined,
+    description: row.description ?? undefined,
+    status: row.status,
+    createdAt: row.created_at,
   };
-}
-
-function readProjects(): Project[] {
-  try {
-    ensureProjectStore();
-
-    const contents = fs
-      .readFileSync(/* turbopackIgnore: true */ projectStorePath, "utf8")
-      .trim();
-    const parsed = contents ? JSON.parse(contents) : [];
-
-    if (!Array.isArray(parsed)) {
-      throw new ProjectStorageError(PROJECT_STORE_UNAVAILABLE);
-    }
-
-    return parsed.map((project) => {
-      const parsedProject = asProject(project);
-
-      if (!parsedProject) {
-        throw new ProjectStorageError(PROJECT_STORE_UNAVAILABLE);
-      }
-
-      return parsedProject;
-    });
-  } catch (error) {
-    if (error instanceof ProjectStorageError) {
-      throw error;
-    }
-
-    throw new ProjectStorageError(PROJECT_STORE_UNAVAILABLE);
-  }
-}
-
-function writeProjects(projects: Project[]) {
-  fs.mkdirSync(/* turbopackIgnore: true */ path.dirname(projectStorePath), {
-    recursive: true,
-  });
-  const temporaryPath = `${projectStorePath}.tmp`;
-
-  fs.writeFileSync(
-    /* turbopackIgnore: true */ temporaryPath,
-    `${JSON.stringify(projects, null, 2)}\n`,
-    "utf8",
-  );
-  fs.renameSync(
-    /* turbopackIgnore: true */ temporaryPath,
-    /* turbopackIgnore: true */ projectStorePath,
-  );
 }
 
 function assertRepositoryUrl(repositoryUrl: string | undefined) {
@@ -159,11 +93,15 @@ function normalizeCreateProjectInput(input: CreateProjectInput): CreateProjectIn
   return { name, slug, repositoryUrl, description };
 }
 
-export function createProject(input: CreateProjectInput): Project {
+export async function createProject(input: CreateProjectInput): Promise<Project> {
   const normalizedInput = normalizeCreateProjectInput(input);
-  const projects = readProjects();
 
-  if (projects.some((project) => project.slug === normalizedInput.slug)) {
+  const duplicate = await query<{ slug: string }>(
+    "select slug from projects where slug = $1 limit 1",
+    [normalizedInput.slug],
+  );
+
+  if (duplicate.rows.length > 0) {
     throw new ProjectValidationError(PROJECT_SLUG_DUPLICATED);
   }
 
@@ -177,12 +115,24 @@ export function createProject(input: CreateProjectInput): Project {
     createdAt: new Date().toISOString(),
   };
 
-  writeProjects([project, ...projects]);
+  await query(
+    `insert into projects (id, name, slug, repository_url, description, status, created_at)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      project.id,
+      project.name,
+      project.slug,
+      project.repositoryUrl ?? null,
+      project.description ?? null,
+      project.status,
+      project.createdAt,
+    ],
+  );
 
   return project;
 }
 
-export function createProjectQueued(input: CreateProjectInput): Promise<Project> {
+export async function createProjectQueued(input: CreateProjectInput): Promise<Project> {
   const queuedWrite = projectWriteQueue.then(() => createProject(input));
   projectWriteQueue = queuedWrite.then(
     () => undefined,
@@ -192,15 +142,23 @@ export function createProjectQueued(input: CreateProjectInput): Promise<Project>
   return queuedWrite;
 }
 
-export function listProjects(): Project[] {
-  return readProjects();
+export async function listProjects(): Promise<Project[]> {
+  const result = await query<ProjectRow>(
+    "select * from projects order by created_at desc",
+  );
+
+  return result.rows.map(rowToProject);
+}
+
+export async function getProjectBySlug(slug: string): Promise<Project | null> {
+  const result = await query<ProjectRow>(
+    "select * from projects where slug = $1 limit 1",
+    [slug],
+  );
+
+  return result.rows[0] ? rowToProject(result.rows[0]) : null;
 }
 
 export function resetProjectsForTests() {
   projectWriteQueue = Promise.resolve();
-  writeProjects([]);
-}
-
-export function setProjectStorePathForTests(storePath: string) {
-  projectStorePath = storePath;
 }

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildAlertsForEvent,
-  createAlert,
-  listAlerts,
-  type Alert,
-} from "@/lib/alerts";
+import { buildAlertsForEvent } from "@/lib/alerts";
 
 describe("alerts domain", () => {
   it("creates token/cost alerts for high token usage", () => {

@@ -3,7 +3,9 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 const queryMock = vi.fn();
 
 vi.mock("pg", () => ({
-  Pool: vi.fn(() => ({ query: queryMock })),
+  Pool: class {
+    query = queryMock;
+  },
 }));
 
 async function importDb() {
@@ -30,6 +32,6 @@ describe("postgres db", () => {
     const db = await importDb();
 
     await expect(db.query("SELECT 1")).resolves.toEqual({ rows: [{ ok: true }] });
-    expect(queryMock).toHaveBeenCalledWith("SELECT 1");
+    expect(queryMock).toHaveBeenCalledWith("SELECT 1", undefined);
   });
 });

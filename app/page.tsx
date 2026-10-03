@@ -1,3 +1,4 @@
+import { LogoutButton } from "@/components/logout-button";
 import { ProjectRegistryDashboard } from "@/components/project-registry-dashboard";
 import { listProjects } from "@/lib/projects";
 
@@ -10,9 +11,12 @@ export default function Home() {
     <div className="flex flex-1 bg-zinc-50 px-6 py-12 font-sans dark:bg-black sm:px-8 lg:px-12">
       <main className="mx-auto grid w-full max-w-5xl gap-8 lg:grid-cols-[1fr_420px] lg:items-start">
         <section className="grid gap-6">
-          <p className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Local-first MVP
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Local-first MVP
+            </p>
+            <LogoutButton />
+          </div>
           <div className="grid gap-4">
             <h1 className="text-4xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
               AI Observability Dashboard

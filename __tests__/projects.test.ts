@@ -1,10 +1,19 @@
 import { describe, expect, it, beforeEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { GET, POST } from "@/app/api/projects/route";
 import {
   createProject,
   listProjects,
   resetProjectsForTests,
+  setProjectStorePathForTests,
 } from "@/lib/projects";
+
+const testProjectStorePath = path.join(
+  os.tmpdir(),
+  "ai-observability-dashboard-projects-test.json",
+);
 
 async function json(response: Response) {
   return response.json() as Promise<unknown>;
@@ -12,6 +21,7 @@ async function json(response: Response) {
 
 describe("project registry", () => {
   beforeEach(() => {
+    setProjectStorePathForTests(testProjectStorePath);
     resetProjectsForTests();
   });
 
@@ -32,6 +42,30 @@ describe("project registry", () => {
     expect(project.id).toMatch(/^proj_/);
     expect(project.createdAt).toBeTruthy();
     expect(listProjects()).toHaveLength(1);
+    expect(JSON.parse(fs.readFileSync(testProjectStorePath, "utf8"))).toHaveLength(1);
+  });
+
+  it("loads projects from the file store", () => {
+    fs.writeFileSync(
+      testProjectStorePath,
+      JSON.stringify([
+        {
+          id: "proj_file_seed",
+          name: "Seeded Project",
+          slug: "seeded-project",
+          status: "active",
+          createdAt: "2026-10-03T00:00:00.000Z",
+        },
+      ]),
+    );
+
+    expect(listProjects()).toMatchObject([
+      {
+        id: "proj_file_seed",
+        name: "Seeded Project",
+        slug: "seeded-project",
+      },
+    ]);
   });
 
   it("rejects duplicated project slugs", () => {
@@ -60,6 +94,7 @@ describe("project registry", () => {
 
 describe("/api/projects", () => {
   beforeEach(() => {
+    setProjectStorePathForTests(testProjectStorePath);
     resetProjectsForTests();
   });
 

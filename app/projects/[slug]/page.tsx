@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { listProjects } from "@/lib/projects";
+import { getProjectBySlug } from "@/lib/projects";
 import { listEventsForProject } from "@/lib/events";
-import { buildAlertsForEvent } from "@/lib/alerts";
+import { listAlerts } from "@/lib/alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +11,16 @@ export default async function ProjectPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const projects = await listProjects();
-  const project = projects.find((item) => item.slug === slug);
+  const project = await getProjectBySlug(slug);
 
   if (!project) {
     notFound();
   }
 
-  const events = await listEventsForProject(project.id);
-  const alerts = events.flatMap((event) => buildAlertsForEvent(event));
+  const [events, alerts] = await Promise.all([
+    listEventsForProject(project.id),
+    listAlerts(project.id),
+  ]);
 
   return (
     <div className="flex flex-1 bg-zinc-50 px-6 py-12 font-sans dark:bg-black sm:px-8 lg:px-12">

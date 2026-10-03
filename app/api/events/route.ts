@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
-import { createEvent, listEventsForProject } from "@/lib/events";
+import {
+  createEvent,
+  EventProjectNotFoundError,
+  listEventsForProject,
+} from "@/lib/events";
 
 const EVENT_INVALID_PAYLOAD = "Invalid event payload";
+const EVENT_STORE_UNAVAILABLE = "Event store is unavailable";
+const DATABASE_URL_MISSING = "DATABASE_URL is missing";
 
 function normalizeEventPayload(payload: unknown): Parameters<typeof createEvent>[0] | null {
   if (!payload || typeof payload !== "object") {
@@ -12,12 +18,17 @@ function normalizeEventPayload(payload: unknown): Parameters<typeof createEvent>
 
   if (
     typeof record.projectId !== "string" ||
+    record.projectId.trim() === "" ||
     typeof record.type !== "string" ||
+    record.type.trim() === "" ||
     typeof record.message !== "string" ||
     (record.level !== "info" && record.level !== "warning" && record.level !== "error") ||
     typeof record.tokens !== "number" ||
+    !Number.isFinite(record.tokens) ||
     typeof record.costUsd !== "number" ||
-    typeof record.latencyMs !== "number"
+    !Number.isFinite(record.costUsd) ||
+    typeof record.latencyMs !== "number" ||
+    !Number.isFinite(record.latencyMs)
   ) {
     return null;
   }
@@ -34,9 +45,13 @@ function normalizeEventPayload(payload: unknown): Parameters<typeof createEvent>
   };
 }
 
+function storeUnavailableResponse() {
+  return NextResponse.json({ error: EVENT_STORE_UNAVAILABLE }, { status: 500 });
+}
+
 export async function GET(request: Request) {
   if (!process.env.DATABASE_URL) {
-    return NextResponse.json({ error: "DATABASE_URL is missing" }, { status: 503 });
+    return NextResponse.json({ error: DATABASE_URL_MISSING }, { status: 503 });
   }
 
   const url = new URL(request.url);
@@ -46,12 +61,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });
   }
 
-  return NextResponse.json({ events: await listEventsForProject(projectId) });
+  try {
+    return NextResponse.json({ events: await listEventsForProject(projectId) });
+  } catch {
+    return storeUnavailableResponse();
+  }
 }
 
 export async function POST(request: Request) {
   if (!process.env.DATABASE_URL) {
-    return NextResponse.json({ error: "DATABASE_URL is missing" }, { status: 503 });
+    return NextResponse.json({ error: DATABASE_URL_MISSING }, { status: 503 });
   }
 
   let payload: unknown;
@@ -68,7 +87,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: EVENT_INVALID_PAYLOAD }, { status: 400 });
   }
 
-  const event = await createEvent(normalized);
+  try {
+    const event = await createEvent(normalized);
+    return NextResponse.json({ event }, { status: 201 });
+  } catch (error) {
+    if (error instanceof EventProjectNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
 
-  return NextResponse.json({ event }, { status: 201 });
+    return storeUnavailableResponse();
+  }
 }

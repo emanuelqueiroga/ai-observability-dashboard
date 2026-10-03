@@ -38,4 +38,7 @@ export const migrationStatements = [
     message text not null,
     created_at timestamptz not null
   )`,
+  `create index if not exists events_project_id_idx on events (project_id)`,
+  `create index if not exists events_created_at_idx on events (created_at desc)`,
+  `create index if not exists alerts_project_id_idx on alerts (project_id)`,
 ];

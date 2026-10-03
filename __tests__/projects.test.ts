@@ -38,9 +38,7 @@ describe("project registry", () => {
   });
 
   it("creates and lists projects through the domain API", async () => {
-    queryMock
-      .mockResolvedValueOnce({ rows: [] }) // duplicate slug check
-      .mockResolvedValueOnce({ rows: [] }); // insert
+    queryMock.mockResolvedValueOnce({ rows: [] }); // insert
 
     const project = await createProject({
       name: "Cliente Alpha",
@@ -87,7 +85,10 @@ describe("project registry", () => {
   });
 
   it("rejects duplicated project slugs", async () => {
-    queryMock.mockResolvedValueOnce({ rows: [{ slug: "alpha" }] });
+    const uniqueViolation = Object.assign(new Error("duplicate key value violates unique constraint"), {
+      code: "23505",
+    });
+    queryMock.mockRejectedValueOnce(uniqueViolation);
 
     await expect(createProject({ name: "Alpha", slug: "alpha" })).rejects.toThrow(
       "Project slug already exists",
@@ -119,9 +120,7 @@ describe("/api/projects", () => {
   });
 
   it("creates projects via POST and lists them via GET", async () => {
-    queryMock
-      .mockResolvedValueOnce({ rows: [] })
-      .mockResolvedValueOnce({ rows: [] });
+    queryMock.mockResolvedValueOnce({ rows: [] });
 
     const created = await POST(
       new Request("http://localhost/api/projects", {

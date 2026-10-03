@@ -85,4 +85,14 @@ describe("events store (postgres)", () => {
 
     await expect(listEventsForProject("proj-a")).rejects.toThrow("connection refused");
   });
+
+  it("normalizes timestamptz Date values into ISO strings", async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{ ...eventRow, created_at: new Date("2026-10-03T00:00:00.000Z") }],
+    });
+
+    const events = await listEventsForProject("proj-a");
+
+    expect(events[0].createdAt).toBe("2026-10-03T00:00:00.000Z");
+  });
 });

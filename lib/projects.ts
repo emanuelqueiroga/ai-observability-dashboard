@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { isPgErrorWithCode, query, toIsoString } from "@/lib/db";
 
 export type ProjectStatus = "active";
 
@@ -24,7 +24,6 @@ const PROJECT_SLUG_INVALID =
   "Project slug must use lowercase letters, numbers and hyphens";
 const PROJECT_REPOSITORY_URL_INVALID = "Repository URL must be a valid URL";
 const PROJECT_SLUG_DUPLICATED = "Project slug already exists";
-const PROJECT_STORE_UNAVAILABLE = "Project store is unavailable";
 
 let projectWriteQueue = Promise.resolve();
 
@@ -39,7 +38,7 @@ type ProjectRow = {
   repository_url: string | null;
   description: string | null;
   status: ProjectStatus;
-  created_at: string;
+  created_at: string | Date;
 };
 
 function rowToProject(row: ProjectRow): Project {
@@ -50,7 +49,7 @@ function rowToProject(row: ProjectRow): Project {
     repositoryUrl: row.repository_url ?? undefined,
     description: row.description ?? undefined,
     status: row.status,
-    createdAt: row.created_at,
+    createdAt: toIsoString(row.created_at),
   };
 }
 
@@ -96,15 +95,6 @@ function normalizeCreateProjectInput(input: CreateProjectInput): CreateProjectIn
 export async function createProject(input: CreateProjectInput): Promise<Project> {
   const normalizedInput = normalizeCreateProjectInput(input);
 
-  const duplicate = await query<{ slug: string }>(
-    "select slug from projects where slug = $1 limit 1",
-    [normalizedInput.slug],
-  );
-
-  if (duplicate.rows.length > 0) {
-    throw new ProjectValidationError(PROJECT_SLUG_DUPLICATED);
-  }
-
   const project: Project = {
     id: createProjectId(),
     name: normalizedInput.name,
@@ -115,19 +105,29 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
     createdAt: new Date().toISOString(),
   };
 
-  await query(
-    `insert into projects (id, name, slug, repository_url, description, status, created_at)
-     values ($1, $2, $3, $4, $5, $6, $7)`,
-    [
-      project.id,
-      project.name,
-      project.slug,
-      project.repositoryUrl ?? null,
-      project.description ?? null,
-      project.status,
-      project.createdAt,
-    ],
-  );
+  try {
+    await query(
+      `insert into projects (id, name, slug, repository_url, description, status, created_at)
+       values ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        project.id,
+        project.name,
+        project.slug,
+        project.repositoryUrl ?? null,
+        project.description ?? null,
+        project.status,
+        project.createdAt,
+      ],
+    );
+  } catch (error) {
+    // Rely on the `projects.slug` unique constraint instead of a check-then-insert
+    // read, which is racy under concurrent requests.
+    if (isPgErrorWithCode(error, "23505")) {
+      throw new ProjectValidationError(PROJECT_SLUG_DUPLICATED);
+    }
+
+    throw error;
+  }
 
   return project;
 }

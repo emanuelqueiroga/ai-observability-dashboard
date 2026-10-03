@@ -13,6 +13,7 @@ describe("dashboard home", () => {
     expect(screen.getByLabelText(/Nome do projeto/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Slug do projeto/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Cadastrar projeto/i })).toBeInTheDocument();
-    expect(screen.getByText(/POST \/api\/projects/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Projetos cadastrados/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/POST \/api\/projects/i).length).toBeGreaterThan(0);
   });
 });

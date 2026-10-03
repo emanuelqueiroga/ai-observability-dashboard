@@ -1,6 +1,11 @@
-import { ProjectRegistrationForm } from "@/components/project-registration-form";
+import { ProjectRegistryDashboard } from "@/components/project-registry-dashboard";
+import { listProjects } from "@/lib/projects";
+
+export const dynamic = "force-dynamic";
 
 export default function Home() {
+  const projects = listProjects();
+
   return (
     <div className="flex flex-1 bg-zinc-50 px-6 py-12 font-sans dark:bg-black sm:px-8 lg:px-12">
       <main className="mx-auto grid w-full max-w-5xl gap-8 lg:grid-cols-[1fr_420px] lg:items-start">
@@ -33,12 +38,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="grid gap-4">
-          <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
-            Cadastro de projeto
-          </h2>
-          <ProjectRegistrationForm />
-        </section>
+        <ProjectRegistryDashboard initialProjects={projects} />
       </main>
     </div>
   );

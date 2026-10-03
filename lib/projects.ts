@@ -31,7 +31,11 @@ function assertRepositoryUrl(repositoryUrl: string | undefined) {
   }
 
   try {
-    new URL(repositoryUrl);
+    const url = new URL(repositoryUrl);
+
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error(PROJECT_REPOSITORY_URL_INVALID);
+    }
   } catch {
     throw new Error(PROJECT_REPOSITORY_URL_INVALID);
   }

@@ -52,6 +52,9 @@ describe("project registry", () => {
     expect(() =>
       createProject({ name: "Valid", slug: "valid", repositoryUrl: "not-a-url" }),
     ).toThrow("Repository URL must be a valid URL");
+    expect(() =>
+      createProject({ name: "Valid", slug: "valid", repositoryUrl: "mailto:repo@example.com" }),
+    ).toThrow("Repository URL must be a valid URL");
   });
 });
 

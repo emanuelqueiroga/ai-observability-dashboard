@@ -1,10 +1,15 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import type { Project } from "@/lib/projects";
 
 type ProjectRegistrationState = {
   message: string;
   tone: "idle" | "success" | "error";
+};
+
+type ProjectRegistrationFormProps = {
+  onProjectCreated?: (project: Project) => void;
 };
 
 const initialState: ProjectRegistrationState = {
@@ -12,13 +17,19 @@ const initialState: ProjectRegistrationState = {
   tone: "idle",
 };
 
-export function ProjectRegistrationForm() {
+export function ProjectRegistrationForm({ onProjectCreated }: ProjectRegistrationFormProps) {
   const [state, setState] = useState(initialState);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const formData = new FormData(event.currentTarget);
+    if (isSubmitting) {
+      return;
+    }
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const payload = {
       name: String(formData.get("name") ?? ""),
       slug: String(formData.get("slug") ?? ""),
@@ -26,15 +37,17 @@ export function ProjectRegistrationForm() {
       description: String(formData.get("description") ?? ""),
     };
 
+    setIsSubmitting(true);
+
     try {
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = (await response.json()) as { error?: string };
+      const result = (await response.json()) as { error?: string; project?: Project };
 
-      if (!response.ok) {
+      if (!response.ok || !result.project) {
         setState({
           message: result.error ?? "Não foi possível cadastrar o projeto.",
           tone: "error",
@@ -42,13 +55,16 @@ export function ProjectRegistrationForm() {
         return;
       }
 
-      event.currentTarget.reset();
+      form.reset();
+      onProjectCreated?.(result.project);
       setState({ message: "Projeto cadastrado com sucesso.", tone: "success" });
     } catch {
       setState({
         message: "Não foi possível conectar à API de projetos.",
         tone: "error",
       });
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -117,13 +133,15 @@ export function ProjectRegistrationForm() {
 
       <button
         type="submit"
-        className="rounded-lg bg-foreground px-4 py-3 text-base font-semibold text-background transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-foreground focus:ring-offset-2 dark:focus:ring-offset-background"
+        disabled={isSubmitting}
+        className="rounded-lg bg-foreground px-4 py-3 text-base font-semibold text-background transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-foreground focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus:ring-offset-background"
       >
-        Cadastrar projeto
+        {isSubmitting ? "Cadastrando..." : "Cadastrar projeto"}
       </button>
 
       {state.message ? (
         <p
+          aria-live="polite"
           className={
             state.tone === "error"
               ? "text-sm font-medium text-red-600 dark:text-red-400"

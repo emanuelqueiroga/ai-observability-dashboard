@@ -68,6 +68,12 @@ describe("project registry", () => {
     ]);
   });
 
+  it("fails explicitly when the file store is corrupted", () => {
+    fs.writeFileSync(testProjectStorePath, "not-json", "utf8");
+
+    expect(() => listProjects()).toThrow("Project store is unavailable");
+  });
+
   it("rejects duplicated project slugs", () => {
     createProject({ name: "Alpha", slug: "alpha" });
 
@@ -142,6 +148,63 @@ describe("/api/projects", () => {
     expect(response.status).toBe(400);
     expect(await json(response)).toMatchObject({
       error: "Project slug must use lowercase letters, numbers and hyphens",
+    });
+  });
+
+  it("returns 400 for malformed JSON request bodies", async () => {
+    const response = await POST(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        body: "not-json",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await json(response)).toMatchObject({
+      error: "Invalid project payload",
+    });
+  });
+
+  it("validates POST payloads before reading a corrupted project store", async () => {
+    fs.writeFileSync(testProjectStorePath, "not-json", "utf8");
+
+    const response = await POST(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: "Broken", slug: "Invalid Slug" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await json(response)).toMatchObject({
+      error: "Project slug must use lowercase letters, numbers and hyphens",
+    });
+  });
+
+  it("serializes concurrent project creation through the API", async () => {
+    const responses = await Promise.all(
+      ["one", "two", "three"].map((slug) =>
+        POST(
+          new Request("http://localhost/api/projects", {
+            method: "POST",
+            body: JSON.stringify({ name: `Project ${slug}`, slug: `project-${slug}` }),
+          }),
+        ),
+      ),
+    );
+
+    expect(responses.map((response) => response.status)).toEqual([201, 201, 201]);
+    expect(listProjects()).toHaveLength(3);
+  });
+
+  it("returns 500 when the project store cannot be read", async () => {
+    fs.writeFileSync(testProjectStorePath, "not-json", "utf8");
+
+    const response = await GET();
+
+    expect(response.status).toBe(500);
+    expect(await json(response)).toMatchObject({
+      error: "Project store is unavailable",
     });
   });
 });

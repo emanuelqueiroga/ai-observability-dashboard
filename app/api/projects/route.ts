@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import { createProject, listProjects, type CreateProjectInput } from "@/lib/projects";
+import {
+  ProjectValidationError,
+  createProjectQueued,
+  listProjects,
+  type CreateProjectInput,
+} from "@/lib/projects";
+
+const STORAGE_ERROR_MESSAGE = "Project store is unavailable";
+const INVALID_PAYLOAD_MESSAGE = "Invalid project payload";
 
 function asCreateProjectInput(payload: unknown): CreateProjectInput {
   if (!payload || typeof payload !== "object") {
@@ -18,18 +26,31 @@ function asCreateProjectInput(payload: unknown): CreateProjectInput {
 }
 
 export async function GET() {
-  return NextResponse.json({ projects: listProjects() });
+  try {
+    return NextResponse.json({ projects: listProjects() });
+  } catch {
+    return NextResponse.json({ error: STORAGE_ERROR_MESSAGE }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json();
-    const project = createProject(asCreateProjectInput(payload));
+    let payload: unknown;
+
+    try {
+      payload = await request.json();
+    } catch {
+      return NextResponse.json({ error: INVALID_PAYLOAD_MESSAGE }, { status: 400 });
+    }
+
+    const project = await createProjectQueued(asCreateProjectInput(payload));
 
     return NextResponse.json({ project }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid project payload";
+    if (error instanceof ProjectValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
 
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: STORAGE_ERROR_MESSAGE }, { status: 500 });
   }
 }

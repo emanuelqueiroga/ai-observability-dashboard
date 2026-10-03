@@ -20,6 +20,11 @@
 # production
 /build
 
+# local runtime data
+/data/projects.json
+/data/*.tmp
+!/data/.gitkeep
+
 # misc
 .DS_Store
 *.pem

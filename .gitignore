@@ -25,6 +25,9 @@
 /data/*.tmp
 !/data/.gitkeep
 
+# database-specific local env values are intentionally in .env.local;
+# use DATABASE_URL if needed outside Docker.
+
 # misc
 .DS_Store
 *.pem

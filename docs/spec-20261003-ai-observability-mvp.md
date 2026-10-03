@@ -44,3 +44,9 @@ Criar uma aplicação web/dashboard para monitorar trabalhos com agentes e model
 - Persistência em arquivo simplifica o MVP e sobrevive a restart local, mas ainda não resolve concorrência multi-instância nem consultas complexas.
 - Autenticação/API keys ficam fora do primeiro corte, mas a modelagem já deixa espaço para adicionar `project.apiKey` ou `ingestToken`.
 - Métricas de tokens, latência e custos ficam para a fase seguinte, após a raiz `Project` estar pronta.
+
+## Auth básica
+
+- Senha única configurada localmente em `.env.local` (`APP_PASSWORD=123456`).
+- Página `/login` autentica e define um cookie de sessão simples.
+- Middleware protege `/` e `/api/projects/*`, redirecionando ou retornando 401 quando não autenticado.
